@@ -1,662 +1,675 @@
-[Canton V9.html](https://github.com/user-attachments/files/25937499/Canton.V9.html)
-<!DOCTYPE html>
-<html lang="zh-HK">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="廣東歌迷">
-    <title>廣東歌迷序會 - DJ Challenge</title>
+[K.html](https://github.com/user-attachments/files/27317789/K.html)
+```react
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, PlusCircle, List, Calculator, History, Download, Trash2, CheckCircle2, Circle } from 'lucide-react';
+
+// --- 常數定義 ---
+const CURRENCIES = [
+  { code: 'HKD', name: '港幣', rate: 1 },
+  { code: 'JPY', name: '日圓', rate: 0.052 },
+  { code: 'TWD', name: '台幣', rate: 0.24 },
+  { code: 'KRW', name: '韓幣', rate: 0.0058 },
+  { code: 'AUD', name: '澳元', rate: 5.1 },
+  { code: 'EUR', name: '歐羅', rate: 8.4 },
+  { code: 'GBP', name: '英鎊', rate: 9.8 },
+  { code: 'THB', name: '泰銖', rate: 0.22 },
+  { code: 'USD', name: '美金', rate: 7.8 },
+  { code: 'VND', name: '越南盾', rate: 0.00031 },
+  { code: 'CNY', name: '人民幣', rate: 1.08 },
+  { code: 'OTHER', name: '其他 (手動)', rate: 1 },
+];
+
+export default function App() {
+  // --- 狀態管理 ---
+  const [activeTab, setActiveTab] = useState('friends');
+  const [friends, setFriends] = useState(['', '']);
+  const [expenses, setExpenses] = useState([]);
+  const [history, setHistory] = useState([]);
+
+  // --- Modal 狀態 ---
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  // --- 初始化加載 LocalStorage ---
+  useEffect(() => {
+    const savedFriends = localStorage.getItem('westernSplit_friends');
+    const savedExpenses = localStorage.getItem('westernSplit_expenses');
+    const savedHistory = localStorage.getItem('westernSplit_history');
+
+    if (savedFriends) setFriends(JSON.parse(savedFriends));
+    if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
+    if (savedHistory) setHistory(JSON.parse(savedHistory));
+  }, []);
+
+  // --- 儲存至 LocalStorage ---
+  useEffect(() => {
+    localStorage.setItem('westernSplit_friends', JSON.stringify(friends));
+    localStorage.setItem('westernSplit_expenses', JSON.stringify(expenses));
+    localStorage.setItem('westernSplit_history', JSON.stringify(history));
+  }, [friends, expenses, history]);
+
+  // --- 有效的朋友名單 (過濾空白) ---
+  const validFriends = useMemo(() => friends.filter(f => f.trim() !== ''), [friends]);
+
+  // --- 共用結算算法 ---
+  const getSettlement = (expList, friendsList) => {
+    let balances = {};
+    friendsList.forEach(f => balances[f] = 0);
+
+    expList.forEach(exp => {
+      const share = exp.splitters.length > 0 ? (exp.hkdAmount / exp.splitters.length) : 0;
+      exp.splitters.forEach(f => {
+        if (balances[f] !== undefined) balances[f] -= share;
+      });
+
+      const paidShare = exp.payers.length > 0 ? (exp.hkdAmount / exp.payers.length) : 0;
+      exp.payers.forEach(f => {
+        if (balances[f] !== undefined) balances[f] += paidShare;
+      });
+    });
+
+    let debtors = [];
+    let creditors = [];
     
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Noto+Sans+HK:wght@400;700;900&display=swap" rel="stylesheet">
+    Object.keys(balances).forEach(person => {
+      const amount = balances[person];
+      if (amount < -0.1) debtors.push({ person, amount: Math.abs(amount) });
+      else if (amount > 0.1) creditors.push({ person, amount });
+    });
 
-    <style>
-        :root {
-            --neon-cyan: #00f3ff;
-            --neon-pink: #ff00ff;
-            --neon-purple: #9d00ff;
-            --neon-yellow: #fbbf24;
-            --dark-bg: #0b0c10;
-        }
+    debtors.sort((a, b) => b.amount - a.amount);
+    creditors.sort((a, b) => b.amount - a.amount);
 
-        body {
-            background-color: var(--dark-bg);
-            background-image: 
-                radial-gradient(circle at 15% 50%, rgba(0, 243, 255, 0.1), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(255, 0, 255, 0.1), transparent 25%);
-            font-family: 'Noto Sans HK', sans-serif;
-            touch-action: manipulation;
-            -webkit-user-select: none;
-            overflow-x: hidden;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            color: white;
-            padding: 1rem;
-        }
+    let transactions = [];
+    let i = 0, j = 0;
 
-        .font-arcade { font-family: 'Orbitron', sans-serif; }
+    while (i < debtors.length && j < creditors.length) {
+      let debtor = debtors[i];
+      let creditor = creditors[j];
+      let minAmount = Math.min(debtor.amount, creditor.amount);
 
-        .neon-text-cyan { color: var(--neon-cyan); text-shadow: 0 0 5px var(--neon-cyan), 0 0 15px var(--neon-cyan); }
-        .neon-text-pink { color: var(--neon-pink); text-shadow: 0 0 5px var(--neon-pink), 0 0 15px var(--neon-pink); }
-        .neon-text-yellow { color: var(--neon-yellow); text-shadow: 0 0 5px var(--neon-yellow), 0 0 15px var(--neon-yellow); }
+      transactions.push({
+        from: debtor.person,
+        to: creditor.person,
+        amount: minAmount
+      });
+
+      debtor.amount -= minAmount;
+      creditor.amount -= minAmount;
+
+      if (debtor.amount < 0.1) i++;
+      if (creditor.amount < 0.1) j++;
+    }
+
+    return { balances, transactions };
+  };
+
+  // --- 介面組件 ---
+
+  // 1. 朋友設定介面
+  const FriendsSetup = () => {
+    const handleFriendChange = (index, value) => {
+      const newFriends = [...friends];
+      newFriends[index] = value;
+      setFriends(newFriends);
+    };
+
+    const addFriend = () => {
+      if (friends.length < 10) setFriends([...friends, '']);
+    };
+
+    const removeFriend = (index) => {
+      if (friends.length > 2) {
+        const newFriends = friends.filter((_, i) => i !== index);
+        setFriends(newFriends);
+      }
+    };
+
+    return (
+      <div className="p-4 pb-24">
+        <h2 className="text-2xl font-bold mb-4 text-[#5C4033] flex items-center">🤠 輸入牛仔名單</h2>
+        <p className="text-sm text-[#8C7A6B] mb-4">最少 2 人，最多 10 人。準備好後就出發記帳！</p>
         
-        .arcade-panel {
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(15px);
-            border-top: 2px solid rgba(255,255,255,0.1);
-            border-bottom: 2px solid rgba(0,0,0,0.8);
-            border: 2px solid var(--neon-cyan);
-            box-shadow: 0 0 10px var(--neon-cyan), inset 0 0 10px rgba(0, 243, 255, 0.3);
-            border-radius: 1.5rem;
-            padding: 1.5rem;
-            width: 100%;
-            max-width: 32rem; 
-            position: relative;
-        }
-
-        .vinyl-record {
-            background: repeating-radial-gradient(#111, #111 4px, #222 5px, #222 6px);
-            box-shadow: 0 0 20px rgba(0,0,0,0.8), 0 0 15px var(--neon-purple);
-            width: 9rem;
-            height: 9rem;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto;
-            transition: transform 0.5s linear;
-        }
-        
-        .animate-spin-slow { animation: spin 4s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-
-        .game-btn { 
-            transition: all 0.2s; 
-            width: 100%;
-            padding: 1rem;
-            border-radius: 0.75rem;
-            font-size: 1.125rem;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            margin-bottom: 0.75rem;
-            cursor: pointer;
-        }
-        .game-btn:active { transform: scale(0.95); }
-        .game-btn:disabled { opacity: 0.7; transform: none; cursor: not-allowed; }
-
-        .btn-cyan { background-color: #1f2937; border: 1px solid var(--neon-cyan); color: #22d3ee; box-shadow: 0 0 10px rgba(0,243,255,0.2); }
-        .btn-purple { background-color: #1f2937; border: 1px solid #a855f7; color: #c084fc; box-shadow: 0 0 10px rgba(168,85,247,0.2); }
-        .btn-pink { background-color: #1f2937; border: 1px solid var(--neon-pink); color: #f472b6; box-shadow: 0 0 15px rgba(255,0,255,0.4); }
-        
-        .btn-option {
-            background-color: #1f2937;
-            border: 1px solid #4b5563;
-            color: white;
-            padding: 0.5rem;
-            border-radius: 0.5rem;
-            font-size: 0.85rem;
-            font-weight: bold;
-            transition: all 0.2s;
-            cursor: pointer;
-            width: 100%;
-            word-break: break-word;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 3.5rem;
-            line-height: 1.2;
-        }
-        @media (min-width: 640px) {
-            .btn-option { font-size: 1rem; padding: 0.75rem; }
-        }
-        .btn-option:hover:not(:disabled) { border-color: var(--neon-cyan); box-shadow: 0 0 10px rgba(0,243,255,0.5); }
-        .btn-option:disabled { cursor: not-allowed; }
-
-        .fade-in { animation: fadeIn 0.4s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        
-        /* 強制隱藏工具 */
-        .hidden-screen { display: none !important; }
-
-        /* 等化器 */
-        .eq-bar { width: 6px; background-color: var(--neon-cyan); border-radius: 4px; transition: height 0.1s ease; box-shadow: 0 0 8px var(--neon-cyan); }
-        .eq-playing .eq-bar:nth-child(1) { animation: eq-bounce 0.8s infinite alternate ease-in-out; }
-        .eq-playing .eq-bar:nth-child(2) { animation: eq-bounce 0.5s infinite alternate ease-in-out 0.2s; background-color: var(--neon-pink); box-shadow: 0 0 8px var(--neon-pink);}
-        .eq-playing .eq-bar:nth-child(3) { animation: eq-bounce 0.9s infinite alternate ease-in-out 0.4s; }
-        .eq-playing .eq-bar:nth-child(4) { animation: eq-bounce 0.6s infinite alternate ease-in-out 0.1s; background-color: var(--neon-pink); box-shadow: 0 0 8px var(--neon-pink);}
-        .eq-playing .eq-bar:nth-child(5) { animation: eq-bounce 0.7s infinite alternate ease-in-out 0.3s; }
-
-        @keyframes eq-bounce { 0% { height: 8px; } 100% { height: 35px; } }
-        
-        audio::-webkit-media-controls { display: none !important; }
-    </style>
-</head>
-<body>
-
-    <audio id="audio-player" preload="auto"></audio>
-
-    <!-- 主畫面 -->
-    <div id="home-screen" class="arcade-panel flex flex-col fade-in">
-        <div class="text-6xl mb-4 text-center w-full flex justify-center">
-            <i class="fas fa-compact-disc text-gray-400"></i>
-        </div>
-        <h1 class="text-3xl font-black mb-2 text-center tracking-wider neon-text-cyan font-arcade">
-            CANTOPOP DJ
-        </h1>
-        <h2 class="text-xl font-bold text-center text-white mb-1">廣東歌迷序會</h2>
-        <p class="text-gray-400 text-center text-xs font-arcade mb-8">Hardcore 6-Options Edition</p>
-
-        <div class="space-y-2 w-full">
-            <button onclick="startGame('year')" class="game-btn btn-cyan">
-                <i class="fas fa-calendar-alt"></i> MODE 1: 估年份
-            </button>
-            <button onclick="startGame('singer')" class="game-btn btn-purple">
-                <i class="fas fa-user-astronaut"></i> MODE 2: 估歌手
-            </button>
-            <button onclick="startGame('song')" class="game-btn btn-pink">
-                <i class="fas fa-music"></i> MODE 3: 估歌名
-            </button>
-        </div>
-    </div>
-
-    <!-- 遊戲畫面 -->
-    <div id="game-screen" class="arcade-panel hidden-screen fade-in" style="border-color: var(--neon-purple);">
-        
-        <div class="flex justify-between items-center bg-black/50 p-3 rounded-lg border border-gray-700 mb-4">
-            <button onclick="returnToHome()" class="text-gray-400 hover:text-white">
-                <i class="fas fa-power-off text-xl"></i>
-            </button>
-            <span id="game-title" class="text-sm font-bold font-arcade text-purple-400 tracking-widest">GUESS THE SONG</span>
-            <div class="text-pink-500 font-arcade text-lg">
-                <span id="current-question">1</span>/<span id="total-questions">10</span>
-            </div>
-        </div>
-
-        <div class="flex flex-col items-center justify-center mb-4 relative w-full">
-            <div id="equalizer" class="flex gap-2 items-end h-[35px] mb-3">
-                <div class="eq-bar h-[8px]"></div><div class="eq-bar h-[8px]"></div><div class="eq-bar h-[8px]"></div><div class="eq-bar h-[8px]"></div><div class="eq-bar h-[8px]"></div>
-            </div>
-
-            <div id="disc-cover" class="vinyl-record">
-                <div class="w-12 h-12 bg-gradient-to-br from-cyan-400 to-purple-600 rounded-full border-2 border-black flex items-center justify-center">
-                    <div class="w-2 h-2 bg-black rounded-full"></div>
-                </div>
-            </div>
-            
-            <div class="mt-4 bg-gray-900 p-2 rounded-xl border border-gray-700 flex flex-col items-center w-full max-w-[200px]">
-                <p id="audio-status" class="text-[10px] text-cyan-300 font-arcade mb-1 h-3 uppercase tracking-widest">SYSTEM READY</p>
-                <button id="play-btn" onclick="togglePlay()" class="w-full py-2 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-lg text-white font-bold text-sm shadow-[0_0_10px_rgba(0,243,255,0.4)] active:scale-95 transition-all flex items-center justify-center gap-2" disabled>
-                    <i class="fas fa-spinner fa-spin"></i> 載入中...
+        <div className="space-y-3">
+          {friends.map((friend, index) => (
+            <div key={index} className="flex items-center space-x-2">
+              <span className="text-[#A89F91] font-bold w-6">{index + 1}.</span>
+              <input
+                type="text"
+                value={friend}
+                onChange={(e) => handleFriendChange(index, e.target.value)}
+                placeholder={`牛仔 ${index + 1}`}
+                className="flex-1 p-3 border-2 border-[#E6DCC8] bg-[#FCFAF8] rounded-xl focus:ring-0 focus:border-[#C86F5E] outline-none text-[#5C4033] placeholder-[#CBBBA0]"
+              />
+              {friends.length > 2 && (
+                <button onClick={() => removeFriend(index)} className="p-2 text-[#D9534F] rounded-full hover:bg-[#FCECEB]">
+                  <Trash2 size={20} />
                 </button>
+              )}
             </div>
+          ))}
         </div>
 
-        <!-- 顯示當前已知的資訊 -->
-        <div id="question-info" class="mb-4 text-center font-bold text-base h-6 w-full flex items-center justify-center"></div>
+        {friends.length < 10 && (
+          <button
+            onClick={addFriend}
+            className="mt-6 w-full py-3 border-2 border-dashed border-[#C86F5E] text-[#C86F5E] bg-[#FCFAF8] rounded-xl font-bold flex items-center justify-center space-x-2 active:bg-[#F5E6E3]"
+          >
+            <PlusCircle size={20} />
+            <span>招募新夥伴</span>
+          </button>
+        )}
 
-        <!-- 答題區域 (2列，3行 = 6個選項) -->
-        <div id="answer-area" class="grid grid-cols-2 gap-2 w-full">
-            <!-- 按鈕由 JS 生成 -->
-        </div>
-    </div>
+        {validFriends.length >= 2 && (
+          <button
+            onClick={() => setActiveTab('add')}
+            className="mt-4 w-full py-4 bg-[#C86F5E] text-white rounded-xl font-bold text-lg shadow-[0_4px_0_#A85A4A] active:translate-y-1 active:shadow-none transition-all"
+          >
+            確認並開始記帳 🐎
+          </button>
+        )}
+      </div>
+    );
+  };
 
-    <!-- 結算畫面 -->
-    <div id="result-screen" class="arcade-panel hidden-screen fade-in" style="border-color: var(--neon-yellow);">
-        <h2 class="text-4xl text-center font-arcade text-yellow-400 mb-2 neon-text-cyan" style="text-shadow: 0 0 10px #fbbf24;">GAME OVER</h2>
-        <p class="text-gray-300 text-center mb-6 font-arcade text-sm">STAGE CLEARED</p>
-        
-        <div class="bg-black/50 p-6 rounded-xl border border-gray-700 mb-6 text-center">
-            <p class="text-gray-400 text-sm mb-2">FINAL SCORE</p>
-            <p class="text-6xl font-black font-arcade text-white"><span id="final-score" class="text-cyan-400">0</span><span class="text-2xl text-gray-600">/</span><span id="max-score" class="text-2xl text-gray-500">10</span></p>
+  // 2. 記帳介面
+  const AddExpense = () => {
+    const [desc, setDesc] = useState('');
+    const [amount, setAmount] = useState('');
+    const [currency, setCurrency] = useState('HKD');
+    const [rate, setRate] = useState(1);
+    const [payers, setPayers] = useState([]);
+    const [splitters, setSplitters] = useState([]);
+
+    useEffect(() => {
+      if (validFriends.length > 0 && splitters.length === 0) {
+        setSplitters([...validFriends]);
+      }
+    }, [validFriends]);
+
+    const handleCurrencyChange = (e) => {
+      const code = e.target.value;
+      setCurrency(code);
+      const selectedCur = CURRENCIES.find(c => c.code === code);
+      if (selectedCur) setRate(selectedCur.rate);
+    };
+
+    const toggleSelection = (person, list, setList) => {
+      if (list.includes(person)) {
+        setList(list.filter(p => p !== person));
+      } else {
+        setList([...list, person]);
+      }
+    };
+
+    const selectAll = (setList) => setList([...validFriends]);
+
+    const handleSave = () => {
+      if (!desc || !amount || payers.length === 0 || splitters.length === 0) {
+        setErrorMessage("請填妥所有資料（項目、金額、付錢人、分擔人）");
+        return;
+      }
+
+      const numAmount = parseFloat(amount);
+      const hkdAmount = numAmount * parseFloat(rate);
+
+      const newExpense = {
+        id: Date.now(),
+        desc,
+        amount: numAmount,
+        currency,
+        rate: parseFloat(rate),
+        hkdAmount,
+        payers,
+        splitters,
+        date: new Date().toLocaleString()
+      };
+
+      setExpenses([...expenses, newExpense]);
+      
+      setDesc('');
+      setAmount('');
+      setPayers([]);
+      setActiveTab('list');
+      window.scrollTo(0, 0);
+    };
+
+    if (validFriends.length < 2) {
+      return <div className="p-4 text-center text-[#8C7A6B] mt-10">🌵 請先在名單加入最少兩位牛仔。</div>;
+    }
+
+    return (
+      <div className="p-4 pb-24 space-y-6">
+        <h2 className="text-2xl font-bold text-[#5C4033] flex items-center">💰 記錄花費</h2>
+
+        {/* Q1 & Q2 */}
+        <div className="space-y-4 bg-[#FCFAF8] p-5 rounded-2xl shadow-sm border border-[#E6DCC8]">
+          <div>
+            <label className="block text-sm font-bold text-[#8C7A6B] mb-2">洗咗去邊？ (項目)</label>
+            <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="例如：酒館晚餐、租馬匹" className="w-full p-3 border-2 border-[#E6DCC8] rounded-xl outline-none focus:border-[#C86F5E] bg-white text-[#5C4033] placeholder-[#CBBBA0]" />
+            <div className="flex flex-wrap gap-2 mt-3">
+              {['早餐', '午餐', '晚餐', '下午茶', '宵夜', 'Coffee'].map(item => (
+                <button
+                  key={item}
+                  onClick={() => setDesc(item)}
+                  className="px-3 py-1.5 bg-[#F5E6E3] border border-[#E6DCC8] rounded-full text-xs font-bold text-[#A85A4A] active:bg-[#EEDBCE] transition-colors"
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-[#8C7A6B] mb-2">幾多錢？</label>
+            <input type="number" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="w-full p-3 border-2 border-[#E6DCC8] rounded-xl outline-none focus:border-[#C86F5E] bg-white text-xl font-bold text-[#5C4033] placeholder-[#CBBBA0]" />
+          </div>
         </div>
 
-        <div class="mb-8 p-4 text-center rounded-lg bg-yellow-900/30 border border-yellow-500/50 shadow-[0_0_10px_rgba(251,191,36,0.2)] w-full">
-            <p class="text-xs text-gray-400 font-arcade mb-1">YOUR RANK</p>
-            <p id="rank-display" class="text-2xl font-bold text-yellow-400 tracking-wider"></p>
-            <p id="rank-desc" class="text-sm text-gray-300 mt-2"></p>
+        {/* Q3: Currency */}
+        <div className="space-y-3 bg-[#FCFAF8] p-5 rounded-2xl shadow-sm border border-[#E6DCC8]">
+          <label className="block text-sm font-bold text-[#8C7A6B]">貨幣及匯率</label>
+          <div className="flex space-x-2">
+            <select value={currency} onChange={handleCurrencyChange} className="w-1/3 p-3 border-2 border-[#E6DCC8] rounded-xl bg-white outline-none text-[#5C4033]">
+              {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+            </select>
+            {currency !== 'HKD' && (
+              <div className="flex-1 flex items-center space-x-2 border-2 border-[#E6DCC8] rounded-xl px-3 bg-white">
+                <span className="text-[#8C7A6B] text-sm whitespace-nowrap font-medium">匯率 x</span>
+                <input type="number" step="0.000001" value={rate} onChange={e => setRate(e.target.value)} className="w-full bg-transparent outline-none py-3 text-[#5C4033] font-medium" />
+              </div>
+            )}
+          </div>
+          {currency !== 'HKD' && amount && (
+            <p className="text-right text-sm text-[#C86F5E] font-bold mt-2">
+              約 HK$ {(parseFloat(amount) * rate).toFixed(1)}
+            </p>
+          )}
         </div>
-        
-        <button onclick="returnToHome()" class="game-btn" style="background-color: #1f2937; border: 1px solid var(--neon-yellow); color: var(--neon-yellow); box-shadow: 0 0 15px rgba(251,191,36,0.3); font-family: 'Orbitron', sans-serif; letter-spacing: 0.1em;">
-            RESTART SYSTEM
+
+        {/* Q4: Payers */}
+        <div className="bg-[#FCFAF8] p-5 rounded-2xl shadow-sm border border-[#E6DCC8]">
+          <div className="flex justify-between items-center mb-3">
+            <label className="block text-sm font-bold text-[#8C7A6B]">邊個出錢？ (金主)</label>
+            <button onClick={() => selectAll(setPayers)} className="text-xs text-[#C86F5E] font-bold bg-[#F5E6E3] px-3 py-1 rounded-full">所有人夾</button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {validFriends.map(f => (
+              <div key={f} onClick={() => toggleSelection(f, payers, setPayers)} className={`flex items-center p-3 rounded-xl border-2 transition-colors font-medium ${payers.includes(f) ? 'border-[#C86F5E] bg-[#F5E6E3] text-[#A85A4A]' : 'border-[#E6DCC8] bg-white text-[#8C7A6B]'}`}>
+                {payers.includes(f) ? <CheckCircle2 size={18} className="mr-2 text-[#C86F5E]" /> : <Circle size={18} className="mr-2 text-[#E6DCC8]" />}
+                <span className="truncate">{f}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Splitters */}
+        <div className="bg-[#FCFAF8] p-5 rounded-2xl shadow-sm border border-[#E6DCC8]">
+          <div className="flex justify-between items-center mb-3">
+            <label className="block text-sm font-bold text-[#8C7A6B] leading-tight w-2/3">邊啲人要分擔？<br/><span className="text-xs font-normal text-[#A89F91]">(如有朋友被請客，請取消剔選)</span></label>
+            <button onClick={() => selectAll(setSplitters)} className="text-xs text-[#8DA399] font-bold bg-[#EAF0EB] px-3 py-1 rounded-full">全選</button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {validFriends.map(f => (
+              <div key={f} onClick={() => toggleSelection(f, splitters, setSplitters)} className={`flex items-center p-3 rounded-xl border-2 transition-colors font-medium ${splitters.includes(f) ? 'border-[#8DA399] bg-[#EAF0EB] text-[#5C7267]' : 'border-[#E6DCC8] bg-white text-[#8C7A6B]'}`}>
+                 {splitters.includes(f) ? <CheckCircle2 size={18} className="mr-2 text-[#8DA399]" /> : <Circle size={18} className="mr-2 text-[#E6DCC8]" />}
+                <span className="truncate">{f}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={handleSave} className="w-full py-4 bg-[#C86F5E] text-white rounded-xl font-bold text-lg shadow-[0_4px_0_#A85A4A] active:translate-y-1 active:shadow-none transition-all">
+          儲存此筆紀錄
         </button>
-    </div>
+      </div>
+    );
+  };
 
-    <script type="text/javascript">
-        // 核心歌庫
-        let songDatabase = [
-            // 陳奕迅
-            { title: '富士山下', artist: '陳奕迅', year: 2006, gender: 'M', query: '陳奕迅 富士山下' },
-            { title: '陀飛輪', artist: '陳奕迅', year: 2010, gender: 'M', query: '陳奕迅 陀飛輪' },
-            { title: '單車', artist: '陳奕迅', year: 2001, gender: 'M', query: '陳奕迅 單車' },
-            { title: '明年今日', artist: '陳奕迅', year: 2002, gender: 'M', query: '陳奕迅 明年今日' },
-            { title: 'K歌之王', artist: '陳奕迅', year: 2000, gender: 'M', query: '陳奕迅 K歌之王' },
-            { title: '人車誌', artist: '陳奕迅', year: 2006, gender: 'M', query: '陳奕迅 人車誌' },
-            { title: '重口味', artist: '陳奕迅', year: 2012, gender: 'M', query: '陳奕迅 重口味' },
-            { title: '苦瓜', artist: '陳奕迅', year: 2011, gender: 'M', query: '陳奕迅 苦瓜' },
-            { title: '無條件', artist: '陳奕迅', year: 2015, gender: 'M', query: '陳奕迅 無條件' },
-            
-            // 陳健安
-            { title: '創作者的派對', artist: '陳健安', year: 2023, gender: 'M', query: '陳健安 創作者的派對' },
-            { title: '好好掛住', artist: '陳健安', year: 2023, gender: 'M', query: '陳健安 好好掛住' },
-            { title: '在錯誤的宇宙尋找愛', artist: '陳健安', year: 2019, gender: 'M', query: '陳健安 在錯誤的宇宙尋找愛' },
-            { title: '仍然是那個少年', artist: '陳健安', year: 2023, gender: 'M', query: '陳健安 仍然是那個少年' },
-            
-            // Jay Fung 馮允謙
-            { title: '報復式浪漫', artist: 'Jay Fung', year: 2022, gender: 'M', query: '馮允謙 報復式浪漫' },
-            { title: '地球來的人', artist: 'Jay Fung', year: 2020, gender: 'M', query: '馮允謙 地球來的人' },
-            { title: '思念即地獄', artist: 'Jay Fung', year: 2021, gender: 'M', query: '馮允謙 思念即地獄' },
-            { title: '給缺席的人唱首歌', artist: 'Jay Fung', year: 2022, gender: 'M', query: '馮允謙 給缺席的人唱首歌' },
-            { title: '收到收到', artist: 'Jay Fung', year: 2023, gender: 'M', query: '馮允謙 收到收到' },
-            
-            // 湯令山 Gareth.T
-            { title: 'Boyfriend Material', artist: '湯令山', year: 2021, gender: 'M', query: 'Gareth.T Boyfriend Material' },
-            { title: '勁浪漫 超溫馨', artist: '湯令山', year: 2021, gender: 'M', query: 'Gareth.T 勁浪漫超溫馨' },
-            { title: '笑住喊', artist: '湯令山', year: 2022, gender: 'M', query: 'Gareth.T 笑住喊' },
-            { title: '國際孤獨等級', artist: '湯令山', year: 2023, gender: 'M', query: 'Gareth.T 國際孤獨等級' },
+  // 3. 明細介面
+  const ExpenseList = () => {
+    const deleteExpense = (id) => {
+      setExpenses(expenses.filter(e => e.id !== id));
+    };
 
-            // 其他熱門男歌手
-            { title: '記憶棉', artist: 'MC 張天賦', year: 2021, gender: 'M', query: 'MC 張天賦 記憶棉' },
-            { title: '老派約會之必要', artist: 'MC 張天賦', year: 2022, gender: 'M', query: 'MC 張天賦 老派約會之必要' },
-            { title: '一人之境', artist: '林家謙', year: 2020, gender: 'M', query: '林家謙 一人之境' },
-            { title: '時光倒流一句話', artist: '林家謙', year: 2020, gender: 'M', query: '林家謙 時光倒流一句話' },
-            { title: '隱形遊樂場', artist: '張敬軒', year: 2023, gender: 'M', query: '張敬軒 隱形遊樂場' },
-            { title: '櫻花樹下', artist: '張敬軒', year: 2008, gender: 'M', query: '張敬軒 櫻花樹下' },
-            
-            // 女歌手
-            { title: '至少做一件離譜的事', artist: 'Kiri T', year: 2024, gender: 'F', query: 'Kiri T 至少做一件離譜的事' },
-            { title: '歧義種子', artist: 'Kiri T', year: 2023, gender: 'F', query: 'Kiri T 歧義種子' },
-            { title: '趁你旅行時搬走', artist: 'Moon Tang', year: 2024, gender: 'F', query: 'Moon Tang 趁你旅行時搬走' },
-            { title: '遲了悔改', artist: 'Moon Tang', year: 2022, gender: 'F', query: 'Moon Tang 遲了悔改' }, 
-            
-            { title: '我的驕傲', artist: '容祖兒', year: 2003, gender: 'F', query: '容祖兒 我的驕傲' },
-            { title: '心淡', artist: '容祖兒', year: 2003, gender: 'F', query: '容祖兒 心淡' },
-            { title: '囍帖街', artist: '謝安琪', year: 2008, gender: 'F', query: '謝安琪 囍帖街' },
-            { title: '鍾無艷', artist: '謝安琪', year: 2007, gender: 'F', query: '謝安琪 鍾無艷' },
-            { title: '凡星', artist: '陳蕾', year: 2021, gender: 'F', query: '陳蕾 凡星' },
-            { title: '少女的祈禱', artist: '楊千嬅', year: 2000, gender: 'F', query: '楊千嬅 少女的祈禱' },
-            { title: '大哥', artist: '衛蘭', year: 2005, gender: 'F', query: '衛蘭 大哥' },
-            { title: '假使世界原來不像你預期', artist: '方皓玟', year: 2018, gender: 'F', query: '方皓玟 假使世界原來不像你預期' },
+    if (expenses.length === 0) {
+      return <div className="p-4 text-center text-[#CBBBA0] mt-16 flex flex-col items-center"><span className="text-6xl mb-4">🌵</span>暫時未有支出紀錄。</div>;
+    }
 
-            // 組合
-            { title: '天梯', artist: 'C AllStar', year: 2010, gender: 'G', query: 'C AllStar 天梯' },
-            { title: '留下來的人', artist: 'C AllStar', year: 2021, gender: 'G', query: 'C AllStar 留下來的人' },
-            { title: '專業失戀30年', artist: 'C AllStar', year: 2016, gender: 'G', query: 'C AllStar 專業失戀30年' },
-            { title: '沒明日的恐懼', artist: 'C AllStar', year: 2021, gender: 'G', query: 'C AllStar 沒明日的恐懼' },
-            { title: '銀河修理員', artist: 'Dear Jane', year: 2020, gender: 'G', query: 'Dear Jane 銀河修理員' },
-            
-            // 單飛成員
-            { title: '人類群星閃耀時', artist: '柳應廷 Jer', year: 2021, gender: 'M', query: '柳應廷 人類群星閃耀時' },
-            { title: '狂人日記', artist: '柳應廷 Jer', year: 2021, gender: 'M', query: '柳應廷 狂人日記' },
-            { title: 'E先生 連環不幸事件', artist: '呂爵安 Edan', year: 2021, gender: 'M', query: '呂爵安 E先生' },
-            { title: '留一天與你喘息', artist: '陳卓賢 Ian', year: 2022, gender: 'M', query: '陳卓賢 留一天與你喘息' },
-            { title: 'Megahit', artist: '盧瀚霆 Anson Lo', year: 2021, gender: 'M', query: '盧瀚霆 Megahit' }
-        ];
-
-        let currentMode = '';
-        let gameQueue = [];
-        let currentIndex = 0;
-        let score = 0;
-        let currentAudioUrl = '';
-        let audioPlayer;
-        const TOTAL_QUESTIONS = 10;
-        let hasInteracted = false;
-
-        function safePlay(player) {
-            try {
-                let playPromise = player.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(e => {
-                        console.log("Autoplay blocked: ", e);
-                        document.getElementById('audio-status').innerText = "⚠️ 請點擊播放";
-                    });
-                }
-            } catch (err) {
-                console.log("Play sync error", err);
-            }
-        }
-
-        function fetchWithTimeout(url, timeout = 4000) {
-            return new Promise((resolve, reject) => {
-                const timer = setTimeout(() => reject(new Error('Timeout')), timeout);
-                fetch(url)
-                    .then(response => {
-                        clearTimeout(timer);
-                        resolve(response);
-                    })
-                    .catch(err => {
-                        clearTimeout(timer);
-                        reject(err);
-                    });
-            });
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            audioPlayer = document.getElementById('audio-player');
-
-            audioPlayer.addEventListener('play', () => {
-                document.getElementById('disc-cover').classList.add('animate-spin-slow');
-                document.getElementById('equalizer').classList.add('eq-playing');
-                document.getElementById('audio-status').innerText = "▶ NOW PLAYING";
-                document.getElementById('play-btn').innerHTML = '<i class="fas fa-pause"></i> PAUSE';
-                document.getElementById('play-btn').className = "w-full py-2 bg-gradient-to-r from-pink-500 to-red-600 rounded-lg text-white font-bold text-sm shadow-[0_0_10px_rgba(255,0,255,0.4)] active:scale-95 transition-all flex items-center justify-center gap-2";
-            });
-
-            audioPlayer.addEventListener('pause', () => {
-                document.getElementById('disc-cover').classList.remove('animate-spin-slow');
-                document.getElementById('equalizer').classList.remove('eq-playing');
-                document.getElementById('audio-status').innerText = "⏸ PAUSED";
-                document.getElementById('play-btn').innerHTML = '<i class="fas fa-play"></i> PLAY AUDIO';
-                document.getElementById('play-btn').className = "w-full py-2 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-lg text-white font-bold text-sm shadow-[0_0_10px_rgba(0,243,255,0.4)] active:scale-95 transition-all flex items-center justify-center gap-2";
-            });
-
-            audioPlayer.addEventListener('ended', () => {
-                document.getElementById('disc-cover').classList.remove('animate-spin-slow');
-                document.getElementById('equalizer').classList.remove('eq-playing');
-                document.getElementById('audio-status').innerText = "⏹ TRACK ENDED";
-                document.getElementById('play-btn').innerHTML = '<i class="fas fa-redo"></i> REPLAY';
-            });
-        });
-
-        window.togglePlay = function() {
-            if (!currentAudioUrl) return;
-            if (audioPlayer.paused) {
-                safePlay(audioPlayer);
-            } else {
-                audioPlayer.pause();
-            }
-        };
-
-        function stopMusic() {
-            if (audioPlayer && !audioPlayer.paused) {
-                audioPlayer.pause();
-            }
-            if (audioPlayer) audioPlayer.currentTime = 0;
-            document.getElementById('disc-cover').classList.remove('animate-spin-slow');
-            document.getElementById('equalizer').classList.remove('eq-playing');
-        }
-
-        // 強制隱藏與顯示的邏輯更新
-        function showScreen(screenId) {
-            const screens = ['home-screen', 'game-screen', 'result-screen'];
-            screens.forEach(id => {
-                const el = document.getElementById(id);
-                if (id === screenId) {
-                    el.classList.remove('hidden-screen');
-                    el.classList.add('flex', 'flex-col');
-                } else {
-                    el.classList.add('hidden-screen');
-                    el.classList.remove('flex', 'flex-col');
-                }
-            });
-        }
-
-        function shuffle(array) {
-            let currentIndex = array.length, randomIndex;
-            while (currentIndex != 0) {
-                randomIndex = Math.floor(Math.random() * currentIndex);
-                currentIndex--;
-                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
-            }
-            return array;
-        }
-
-        function getSimilarYear(targetYear) {
-            const offsets = [-4, -3, -2, -1, 1, 2, 3, 4, 5];
-            return targetYear + offsets[Math.floor(Math.random() * offsets.length)];
-        }
-
-        window.startGame = function(mode) {
-            hasInteracted = true;
-            if (audioPlayer) {
-                audioPlayer.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-                safePlay(audioPlayer);
-            }
-            
-            currentMode = mode;
-            score = 0;
-            currentIndex = 0;
-            
-            let shuffledSongs = shuffle([...songDatabase]);
-            gameQueue = shuffledSongs.slice(0, TOTAL_QUESTIONS);
-
-            showScreen('game-screen'); // 確保切換畫面
-            
-            const titles = {
-                'year': 'MODE 1: 估年份',
-                'singer': 'MODE 2: 估歌手',
-                'song': 'MODE 3: 估歌名'
-            };
-            document.getElementById('game-title').innerText = titles[mode];
-
-            prepareAndLoadQuestion();
-        };
-
-        async function prepareAndLoadQuestion() {
-            stopMusic();
-            const answerArea = document.getElementById('answer-area');
-            const playBtn = document.getElementById('play-btn');
-            const status = document.getElementById('audio-status');
-            const infoDisplay = document.getElementById('question-info');
-
-            document.getElementById('current-question').innerText = currentIndex + 1;
-            document.getElementById('total-questions').innerText = TOTAL_QUESTIONS;
-            infoDisplay.innerText = "";
-            answerArea.innerHTML = '<div class="col-span-2 text-center text-cyan-400 font-bold py-4">🎵 正在尋找音源...</div>';
-            playBtn.disabled = true;
-            playBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> LOADING...';
-            status.innerText = "CONNECTING...";
-
-            let currentSong = gameQueue[currentIndex];
-            let audioFound = false;
-            
-            for (let attempts = 0; attempts < 5; attempts++) {
-                try {
-                    let url = `https://itunes.apple.com/search?term=${encodeURIComponent(currentSong.query)}&entity=song&country=hk&limit=1`;
-                    let response = await fetchWithTimeout(url, 3000);
-                    let data = await response.json();
-                    
-                    if (data.results && data.results.length > 0) {
-                        currentAudioUrl = data.results[0].previewUrl;
-                        audioPlayer.src = currentAudioUrl;
-                        audioFound = true;
-                        break; 
-                    } else {
-                        throw new Error("No preview available");
-                    }
-                } catch (err) {
-                    console.log("找不到音樂，刪除並替換:", currentSong.title);
-                    songDatabase = songDatabase.filter(s => s.title !== currentSong.title);
-                    
-                    let newSong;
-                    let findAttempts = 0;
-                    do {
-                        newSong = songDatabase[Math.floor(Math.random() * songDatabase.length)];
-                        findAttempts++;
-                    } while (gameQueue.includes(newSong) && findAttempts < 20);
-                    
-                    currentSong = newSong;
-                    gameQueue[currentIndex] = currentSong;
-                }
-            }
-
-            playBtn.disabled = false;
-            status.innerText = "READY";
-            playBtn.innerHTML = '<i class="fas fa-play"></i> 播放音樂';
-            
-            if (audioFound) {
-                safePlay(audioPlayer);
-            } else {
-                status.innerText = "⚠️ 音樂載入失敗";
-                playBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> 盲估模式';
-            }
-
-            renderOptions(currentSong);
-        }
-
-        function renderOptions(currentSong) {
-            const answerArea = document.getElementById('answer-area');
-            const infoDisplay = document.getElementById('question-info');
-            answerArea.innerHTML = ''; 
-
-            if (currentMode === 'year') {
-                infoDisplay.innerText = `《${currentSong.title}》 - ${currentSong.artist}`;
-                infoDisplay.className = "mb-4 text-center font-bold text-base text-gray-200 w-full break-words";
-            } else if (currentMode === 'singer') {
-                infoDisplay.innerText = `❓ 請聆聽音樂猜測歌手 ❓`;
-                infoDisplay.className = "mb-4 text-center font-bold text-base text-pink-400 w-full break-words";
-            } else if (currentMode === 'song') {
-                infoDisplay.innerText = `❓ 請聆聽音樂猜測歌名 ❓`;
-                infoDisplay.className = "mb-4 text-center font-bold text-base text-cyan-300 w-full break-words";
-            }
-
-            let options = [];
-            let correctAns;
-            
-            if (currentMode === 'year') {
-                correctAns = currentSong.year;
-                options.push(correctAns);
-                while (options.length < 6) {
-                    let fakeYear = getSimilarYear(correctAns);
-                    if (fakeYear >= 1990 && fakeYear <= 2026 && !options.includes(fakeYear)) {
-                        options.push(fakeYear);
-                    }
-                }
-            } else if (currentMode === 'singer') {
-                correctAns = currentSong.artist;
-                options.push(correctAns);
-                let pool = songDatabase.filter(s => s.gender === currentSong.gender && s.artist !== correctAns);
-                let uniqueArtists = [...new Set(pool.map(s => s.artist))];
-                uniqueArtists = shuffle(uniqueArtists);
-                for (let i = 0; i < uniqueArtists.length; i++) {
-                    if (options.length >= 6) break;
-                    options.push(uniqueArtists[i]);
-                }
-                if(options.length < 6) {
-                    let allUniqueArtists = [...new Set(songDatabase.map(s => s.artist))];
-                    allUniqueArtists = shuffle(allUniqueArtists);
-                    for (let i = 0; i < allUniqueArtists.length; i++) {
-                        if (options.length >= 6) break;
-                        if (!options.includes(allUniqueArtists[i])) {
-                            options.push(allUniqueArtists[i]);
-                        }
-                    }
-                }
-            } else if (currentMode === 'song') {
-                correctAns = currentSong.title;
-                options.push(correctAns);
-                let pool = songDatabase.filter(s => s.artist === currentSong.artist && s.title !== correctAns);
-                if (pool.length < 5) {
-                    let extraPool = songDatabase.filter(s => s.gender === currentSong.gender && s.title !== correctAns && !pool.includes(s));
-                    pool = pool.concat(extraPool);
-                }
-                pool = shuffle(pool);
-                for (let i = 0; i < pool.length; i++) {
-                    if (options.length >= 6) break;
-                    if (!options.includes(pool[i].title)) {
-                        options.push(pool[i].title);
-                    }
-                }
-                if (options.length < 6) {
-                    let allPool = shuffle([...songDatabase]);
-                     for (let i = 0; i < allPool.length; i++) {
-                        if (options.length >= 6) break;
-                        if (!options.includes(allPool[i].title)) {
-                            options.push(allPool[i].title);
-                        }
-                    }
-                }
-            }
-
-            options = shuffle(options);
-            
-            options.forEach(opt => {
-                const btn = document.createElement('button');
-                btn.className = "btn-option";
-                btn.innerText = opt + (currentMode === 'year' ? ' 年' : '');
-                btn.onclick = () => window.checkButtonAnswer(opt, correctAns, btn);
-                answerArea.appendChild(btn);
-            });
-        }
-
-        window.checkButtonAnswer = function(selected, correct, btnElement) {
-            const buttons = document.getElementById('answer-area').querySelectorAll('button');
-            buttons.forEach(b => b.disabled = true);
-
-            if (selected === correct) {
-                btnElement.style.backgroundColor = '#064e3b'; 
-                btnElement.style.borderColor = '#34d399'; 
-                btnElement.style.color = '#34d399';
-                score++;
-            } else {
-                btnElement.style.backgroundColor = '#7f1d1d'; 
-                btnElement.style.borderColor = '#f87171'; 
-                btnElement.style.color = '#f87171';
+    return (
+      <div className="p-4 pb-24">
+        <h2 className="text-2xl font-bold mb-4 text-[#5C4033]">📜 帳單明細</h2>
+        
+        <div className="overflow-x-auto bg-[#FCFAF8] rounded-xl shadow-sm border border-[#E6DCC8]">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-[#F5F1E7] text-[#8C7A6B] font-bold border-b border-[#E6DCC8]">
+              <tr>
+                <th className="p-3 whitespace-nowrap min-w-[120px]">項目</th>
+                <th className="p-3 whitespace-nowrap text-right">總額 (HKD)</th>
+                {validFriends.map(f => (
+                  <th key={f} className="p-3 text-center whitespace-nowrap min-w-[80px] border-l border-[#E6DCC8] bg-[#F5F1E7]/50">{f}</th>
+                ))}
+                <th className="p-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {expenses.map((exp, idx) => {
+                const sharePerPerson = exp.splitters.length > 0 ? (exp.hkdAmount / exp.splitters.length) : 0;
                 
-                buttons.forEach(b => {
-                    if (b.innerText.replace(' 年', '') == correct) {
-                        b.style.borderColor = '#34d399';
-                        b.style.color = '#34d399';
-                    }
-                });
-            }
-            setTimeout(nextQuestion, 1500);
-        };
+                return (
+                  <tr key={exp.id} className={`border-b border-[#E6DCC8] last:border-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-[#FCFAF8]'}`}>
+                    <td className="p-3">
+                      <div className="font-bold text-[#5C4033]">{exp.desc}</div>
+                      <div className="text-xs text-[#A89F91] mt-1 flex flex-col font-medium">
+                        <span>金主: {exp.payers.join(', ')}</span>
+                        {exp.currency !== 'HKD' && <span>{exp.currency} {exp.amount} (率:{exp.rate})</span>}
+                      </div>
+                    </td>
+                    <td className="p-3 text-right font-black text-[#C86F5E]">
+                      ${exp.hkdAmount.toFixed(1)}
+                    </td>
+                    {validFriends.map(f => (
+                      <td key={f} className="p-3 text-center border-l border-[#E6DCC8] text-[#8C7A6B] font-medium">
+                        {exp.splitters.includes(f) ? `$${sharePerPerson.toFixed(1)}` : <span className="text-[#DCD3C6]">-</span>}
+                      </td>
+                    ))}
+                    <td className="p-3 text-center">
+                      <button onClick={() => deleteExpense(exp.id)} className="text-[#D9534F] hover:text-red-700">
+                        <Trash2 size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
-        function nextQuestion() {
-            currentIndex++;
-            if (currentIndex < gameQueue.length) {
-                prepareAndLoadQuestion(); 
-            } else {
-                endGame();
-            }
-        }
+  // 4. 結算總結介面
+  const Summary = () => {
+    const { transactions } = useMemo(() => getSettlement(expenses, validFriends), [expenses, validFriends]);
 
-        function endGame() {
-            stopMusic();
-            showScreen('result-screen');
-            
-            document.getElementById('final-score').innerText = score;
-            
-            const rankDisplay = document.getElementById('rank-display');
-            const rankDesc = document.getElementById('rank-desc');
-            
-            if (score === 10) {
-                rankDisplay.innerText = "👑 金曲歌神";
-                rankDisplay.style.color = "var(--neon-yellow)";
-                rankDisplay.style.textShadow = "0 0 10px var(--neon-yellow)";
-                rankDesc.innerText = "太癲啦！你係咪喺 K房住㗎？";
-            } else if (score >= 7) {
-                rankDisplay.innerText = "🌟 廣東歌達人";
-                rankDisplay.style.color = "var(--neon-cyan)";
-                rankDisplay.style.textShadow = "0 0 5px var(--neon-cyan)";
-                rankDesc.innerText = "好勁！平時一定聽好多廣東歌！";
-            } else if (score >= 4) {
-                rankDisplay.innerText = "🎧 普通樂迷";
-                rankDisplay.style.color = "#c084fc"; 
-                rankDisplay.style.textShadow = "none";
-                rankDesc.innerText = "唔錯啦，流行曲你都略懂一二！";
-            } else {
-                rankDisplay.innerText = "🌱 新手樂迷";
-                rankDisplay.style.color = "#9ca3af"; 
-                rankDisplay.style.textShadow = "none";
-                rankDesc.innerText = "聽多啲本地歌啦，香港樂壇需要你！";
-            }
-        }
+    const handleSaveToHistory = () => {
+      if (expenses.length === 0) return;
+      setSaveName(`西部探險 ${new Date().toLocaleDateString()}`);
+      setShowSaveModal(true);
+    };
 
-        window.returnToHome = function() {
-            stopMusic();
-            showScreen('home-screen');
-        };
-    </script>
-</body>
-</html>
+    if (expenses.length === 0) {
+      return <div className="p-4 text-center text-[#CBBBA0] mt-16 flex flex-col items-center"><span className="text-6xl mb-4">🐴</span>未有帳單可供結算。</div>;
+    }
+
+    return (
+      <div className="p-4 pb-24 space-y-6">
+        <h2 className="text-2xl font-bold text-[#5C4033]">🤝 結算結果</h2>
+
+        <div className="bg-[#FCFAF8] p-5 rounded-2xl shadow-sm border border-[#E6DCC8]">
+          <h3 className="text-lg font-bold text-[#8C7A6B] mb-4 border-b border-[#E6DCC8] pb-3">最簡潔還款方案</h3>
+          {transactions.length === 0 ? (
+            <p className="text-[#8DA399] text-center font-bold py-6 text-lg">完美！沒有人欠任何人錢。</p>
+          ) : (
+            <div className="space-y-3">
+              {transactions.map((t, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-white p-4 rounded-xl border border-[#E6DCC8]">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-[#D9534F] text-lg">{t.from}</span>
+                    <span className="text-[#A89F91] text-sm">應付給</span>
+                    <span className="font-bold text-[#8DA399] text-lg">{t.to}</span>
+                  </div>
+                  <div className="text-xl font-black text-[#5C4033]">
+                    HK$ {t.amount.toFixed(1)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button onClick={handleSaveToHistory} className="w-full py-4 bg-[#8DA399] text-white rounded-xl font-bold text-lg shadow-[0_4px_0_#72857C] active:translate-y-1 active:shadow-none transition-all">
+          儲存本次結算至紀錄
+        </button>
+      </div>
+    );
+  };
+
+  // 5. 歷史紀錄 & 匯出介面
+  const HistoryTab = () => {
+    const exportToExcel = (record) => {
+      let csvContent = "\uFEFF";
+      csvContent += `旅程名稱:,${record.name}\n`;
+      csvContent += `日期:,${record.date}\n\n`;
+      
+      csvContent += "項目,外幣金額,貨幣,匯率,總額 (HKD),出錢人 (金主),分擔人\n";
+      
+      record.expenses.forEach(exp => {
+        const desc = `"${exp.desc.replace(/"/g, '""')}"`;
+        const payers = `"${exp.payers.join(', ')}"`;
+        const splitters = `"${exp.splitters.join(', ')}"`;
+        
+        csvContent += `${desc},${exp.amount},${exp.currency},${exp.rate},${exp.hkdAmount.toFixed(2)},${payers},${splitters}\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${record.name}_拆帳明細.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      const updatedHistory = history.map(h => 
+        h.id === record.id ? { ...h, isExported: true } : h
+      );
+      setHistory(updatedHistory);
+    };
+
+    const deleteRecord = (id) => {
+      setDeleteConfirm(id);
+    };
+
+    if (history.length === 0) {
+      return <div className="p-4 text-center text-[#CBBBA0] mt-16 flex flex-col items-center"><span className="text-6xl mb-4">⛺</span>暫時未有歷史紀錄。</div>;
+    }
+
+    return (
+      <div className="p-4 pb-24">
+        <h2 className="text-2xl font-bold mb-4 text-[#5C4033]">📖 歷史紀錄與匯出</h2>
+        
+        <div className="space-y-4">
+          {history.map(record => {
+            const recordTransactions = record.transactions || getSettlement(record.expenses, record.friends).transactions;
+            return (
+              <div key={record.id} className="bg-[#FCFAF8] p-5 rounded-2xl shadow-sm border border-[#E6DCC8]">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="font-bold text-xl text-[#5C4033]">{record.name}</h3>
+                      {record.isExported && (
+                        <span className="bg-[#EAF0EB] text-[#5C7267] text-[10px] px-2 py-0.5 rounded-full font-bold border border-[#8DA399]/30">已匯出</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[#A89F91] mt-1">{record.date}</p>
+                  </div>
+                  <button onClick={() => deleteRecord(record.id)} className="text-[#D9534F] p-2 hover:bg-[#FCECEB] rounded-full transition-colors">
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+                <p className="text-sm text-[#8C7A6B] mb-4 font-medium border-l-2 border-[#C86F5E] pl-2">
+                  共 {record.expenses.length} 筆項目 <br/>參與者：{record.friends.join(', ')}
+                </p>
+                
+                {/* 結算明細區塊 */}
+                <div className="mb-5 bg-white p-3 rounded-xl border border-[#E6DCC8]">
+                  <h4 className="text-xs font-bold text-[#8C7A6B] mb-2 border-b border-[#E6DCC8] pb-1">結算明細</h4>
+                  {recordTransactions.length === 0 ? (
+                    <p className="text-[#8DA399] text-sm font-bold py-1">沒有人欠任何人錢。</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {recordTransactions.map((t, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-sm bg-[#FCFAF8] p-2 rounded-lg border border-[#F5F1E7]">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="font-bold text-[#D9534F]">{t.from}</span>
+                            <span className="text-[#A89F91] text-xs">應付給</span>
+                            <span className="font-bold text-[#8DA399]">{t.to}</span>
+                          </div>
+                          <div className="font-black text-[#5C4033]">
+                            ${t.amount.toFixed(1)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                <button 
+                  onClick={() => exportToExcel(record)}
+                  className={`w-full py-3 rounded-xl font-bold flex items-center justify-center space-x-2 transition-colors ${record.isExported ? 'bg-white text-[#A89F91] border-2 border-[#E6DCC8]' : 'bg-[#FCFAF8] text-[#5C4033] border-2 border-[#5C4033]'}`}
+                >
+                  <Download size={18} />
+                  <span>{record.isExported ? '重新匯出 Excel' : '匯出為 Excel (CSV)'}</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // --- Modal 執行函數 ---
+  const executeSaveToHistory = () => {
+    if (!saveName.trim()) {
+      setErrorMessage("請輸入紀錄名稱");
+      return;
+    }
+    const { transactions } = getSettlement(expenses, validFriends);
+    const newRecord = {
+      id: Date.now(),
+      name: saveName,
+      date: new Date().toLocaleString(),
+      expenses: [...expenses],
+      friends: [...validFriends],
+      transactions: transactions
+    };
+    setHistory([newRecord, ...history]);
+    setExpenses([]);
+    setShowSaveModal(false);
+    setActiveTab('history');
+  };
+
+  const executeDeleteRecord = () => {
+    setHistory(history.filter(h => h.id !== deleteConfirm));
+    setDeleteConfirm(null);
+  };
+
+  // --- 主渲染 ---
+  return (
+    <div className="min-h-screen bg-[#F5F1E7] font-sans pb-safe selection:bg-[#C86F5E]/20">
+      {/* 頂部標題 */}
+      <div className="bg-[#EEDBCE] pt-10 pb-4 px-4 shadow-sm sticky top-0 z-10 border-b-4 border-[#C86F5E]/10">
+        <h1 className="text-xl font-black text-center text-[#5C4033] tracking-wider">🤠 西部牛仔拆賬簿</h1>
+      </div>
+
+      {/* 內容區 */}
+      <div className="max-w-md mx-auto w-full">
+        {activeTab === 'friends' && <FriendsSetup />}
+        {activeTab === 'add' && <AddExpense />}
+        {activeTab === 'list' && <ExpenseList />}
+        {activeTab === 'summary' && <Summary />}
+        {activeTab === 'history' && <HistoryTab />}
+      </div>
+
+      {/* 底部導航列 */}
+      <div className="fixed bottom-0 left-0 right-0 bg-[#FCFAF8] border-t-2 border-[#E6DCC8] pb-safe pt-2 px-1 shadow-[0_-4px_10px_-1px_rgba(92,64,51,0.05)] z-20">
+        <div className="max-w-md mx-auto flex justify-between items-center">
+          <button onClick={() => setActiveTab('friends')} className={`flex flex-col items-center p-2 flex-1 transition-colors ${activeTab === 'friends' ? 'text-[#C86F5E]' : 'text-[#A89F91]'}`}>
+            <Users size={24} className="mb-1" />
+            <span className="text-[10px] font-bold">1.夥伴</span>
+          </button>
+          <button onClick={() => setActiveTab('add')} className={`flex flex-col items-center p-2 flex-1 transition-colors ${activeTab === 'add' ? 'text-[#C86F5E]' : 'text-[#A89F91]'}`}>
+            <PlusCircle size={24} className="mb-1" />
+            <span className="text-[10px] font-bold">2.記帳</span>
+          </button>
+          <button onClick={() => setActiveTab('list')} className={`flex flex-col items-center p-2 flex-1 transition-colors ${activeTab === 'list' ? 'text-[#C86F5E]' : 'text-[#A89F91]'}`}>
+            <List size={24} className="mb-1" />
+            <span className="text-[10px] font-bold">3.明細</span>
+          </button>
+          <button onClick={() => setActiveTab('summary')} className={`flex flex-col items-center p-2 flex-1 transition-colors ${activeTab === 'summary' ? 'text-[#C86F5E]' : 'text-[#A89F91]'}`}>
+            <Calculator size={24} className="mb-1" />
+            <span className="text-[10px] font-bold">4.結算</span>
+          </button>
+          <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center p-2 flex-1 transition-colors ${activeTab === 'history' ? 'text-[#C86F5E]' : 'text-[#A89F91]'}`}>
+            <History size={24} className="mb-1" />
+            <span className="text-[10px] font-bold">5.紀錄</span>
+          </button>
+        </div>
+        <div className="h-6 w-full"></div>
+      </div>
+
+      {/* 提示訊息 Modal */}
+      {errorMessage && (
+        <div className="fixed inset-0 bg-[#5C4033]/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-[#FCFAF8] rounded-3xl p-6 max-w-sm w-full shadow-2xl border-4 border-[#EEDBCE]">
+            <h3 className="text-xl font-black text-[#5C4033] mb-2 flex items-center gap-2">⚠️ 提示</h3>
+            <p className="text-[#8C7A6B] mb-6 font-medium">{errorMessage}</p>
+            <button onClick={() => setErrorMessage('')} className="w-full py-3 bg-[#C86F5E] text-white rounded-xl font-bold shadow-[0_4px_0_#A85A4A] active:translate-y-1 active:shadow-none transition-all">
+              知道了
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 儲存紀錄 Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-[#5C4033]/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-[#FCFAF8] rounded-3xl p-6 max-w-sm w-full shadow-2xl border-4 border-[#EEDBCE]">
+            <h3 className="text-xl font-black text-[#5C4033] mb-4">💾 儲存結算紀錄</h3>
+            <p className="text-sm font-bold text-[#8C7A6B] mb-2">請為這次旅程命名：</p>
+            <input 
+              type="text" 
+              value={saveName} 
+              onChange={(e) => setSaveName(e.target.value)}
+              className="w-full p-3 border-2 border-[#E6DCC8] bg-white rounded-xl outline-none focus:border-[#C86F5E] mb-6 text-[#5C4033] font-bold"
+              placeholder="例如：西部牛仔之旅"
+            />
+            <div className="flex space-x-3">
+              <button onClick={() => setShowSaveModal(false)} className="flex-1 py-3 bg-white border-2 border-[#E6DCC8] text-[#8C7A6B] rounded-xl font-bold active:bg-[#F5F1E7]">
+                取消
+              </button>
+              <button onClick={executeSaveToHistory} className="flex-1 py-3 bg-[#8DA399] text-white rounded-xl font-bold shadow-[0_4px_0_#72857C] active:translate-y-1 active:shadow-none transition-all">
+                確認儲存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 刪除確認 Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-[#5C4033]/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-[#FCFAF8] rounded-3xl p-6 max-w-sm w-full shadow-2xl border-4 border-[#EEDBCE]">
+            <h3 className="text-xl font-black text-[#5C4033] mb-2">🗑️ 確認刪除</h3>
+            <p className="text-[#8C7A6B] mb-6 font-medium">確定要刪除這筆紀錄嗎？此動作無法復原。</p>
+            <div className="flex space-x-3">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-3 bg-white border-2 border-[#E6DCC8] text-[#8C7A6B] rounded-xl font-bold active:bg-[#F5F1E7]">
+                取消
+              </button>
+              <button onClick={executeDeleteRecord} className="flex-1 py-3 bg-[#D9534F] text-white rounded-xl font-bold shadow-[0_4px_0_#A83A36] active:translate-y-1 active:shadow-none transition-all">
+                確認刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+```
